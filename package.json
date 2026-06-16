@@ -1,0 +1,26 @@
+{
+  "name": "chess-tournament",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "23명 규모 초심자 체스 대회 운영 웹앱 (스위스 예선 + 녹아웃 결선)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:ghpages": "cross-env DEPLOY_TARGET=ghpages vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "firebase": "^10.14.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.2",
+    "vite": "^5.4.8",
+    "vitest": "^2.1.2"
+  }
+}

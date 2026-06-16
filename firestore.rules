@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// 체스 토너먼트 Firestore 보안 규칙 (DESIGN 7장)
+//
+// 2차 베이스라인: 읽기는 공개, 쓰기는 "인증된 사용자(익명 포함)"만.
+//   - 앱이 익명 Auth 로 로그인하므로 무인증 외부 쓰기를 차단.
+//   - 결과는 어차피 Chess.com 검증/운영자 승인 게이트를 거치므로 캐주얼 대회엔 충분.
+//
+// 더 강하게(운영자만 쓰기) 가려면 아래 isAdmin() 주석을 켜고,
+// 운영자 계정에 custom claim { admin: true } 를 부여하세요.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    // function isAdmin() {
+    //   return request.auth != null && request.auth.token.admin == true;
+    // }
+
+    match /meta/{docId} {
+      allow read: if true;
+      allow write: if signedIn(); // 강화 시: isAdmin()
+    }
+
+    match /players/{playerId} {
+      allow read: if true;
+      allow create: if true;          // 참가자 자기등록
+      allow update, delete: if signedIn(); // 강화 시: isAdmin()
+    }
+
+    match /rounds/{roundId} {
+      allow read: if true;
+      allow write: if signedIn();     // 강화 시: isAdmin()
+    }
+
+    match /pairings/{pairingId} {
+      allow read: if true;
+      allow write: if signedIn();     // 강화 시: isAdmin() + 본인 대진 제한
+    }
+
+    match /reviewQueue/{itemId} {
+      allow read: if signedIn();
+      allow write: if signedIn();     // 강화 시: isAdmin()
+    }
+  }
+}
