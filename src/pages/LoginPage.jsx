@@ -85,32 +85,32 @@ export default function LoginPage() {
               데모 데이터의 PIN은 모두 <b>1234</b> 예요. (예: 유저네임 <code>navi_cat</code>)
             </p>
           </form>
+        ) : storeMode === 'firebase' ? (
+          // 실배포(firebase)에선 구글 화이트리스트 로그인만 허용.
+          // 비밀번호 로그인은 소스에 하드코딩돼 공개되므로 노출하지 않는다.
+          <div>
+            <button
+              type="button"
+              onClick={submitGoogle}
+              className="primary"
+              style={{ width: '100%' }}
+            >
+              🔵 Google로 로그인 (운영자)
+            </button>
+            <p className="muted" style={{ fontSize: '0.8rem', marginTop: 10 }}>
+              운영자 허용 목록(<code>VITE_ADMIN_EMAILS</code>)에 등록된 구글 계정만 로그인됩니다.
+            </p>
+          </div>
         ) : (
+          // 로컬 개발 모드 폴백: 구글 로그인이 없으므로 비밀번호 로그인 유지.
           <form onSubmit={submitAdmin}>
-            {storeMode === 'firebase' && (
-              <>
-                <button
-                  type="button"
-                  onClick={submitGoogle}
-                  style={{ width: '100%', marginBottom: 12 }}
-                >
-                  🔵 Google로 로그인 (운영자)
-                </button>
-                <div className="muted" style={{ textAlign: 'center', fontSize: '0.8rem', margin: '4px 0 12px' }}>
-                  — 또는 비밀번호 —
-                </div>
-              </>
-            )}
             <label className="field">
-              <span>운영자 비밀번호</span>
+              <span>운영자 비밀번호 (로컬 개발용)</span>
               <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} />
             </label>
             <button className="primary" type="submit" style={{ width: '100%' }}>
               운영자 로그인
             </button>
-            <p className="muted" style={{ fontSize: '0.8rem', marginTop: 10 }}>
-              데모 비밀번호: <b>cat1234</b> · 구글 로그인은 firebase 모드에서 동작
-            </p>
           </form>
         )}
       </div>
