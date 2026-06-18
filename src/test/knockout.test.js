@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   seedEntrants,
+  selectEntrants,
   startingStageFor,
   createInitialMatches,
   matchScore,
@@ -26,6 +27,47 @@ describe('seedEntrants', () => {
     expect(e).toHaveLength(16);
     expect(e[0]).toEqual({ seed: 1, playerId: 'p1' });
     expect(e[15]).toEqual({ seed: 16, playerId: 'p16' });
+  });
+});
+
+describe('seedEntrants — 확정 진출/탈락 오버라이드 (항상 16명 유지)', () => {
+  it('확정탈락: 순위 16위 이내여도 제외되고 다음 순위가 슬롯을 승계', () => {
+    const e = seedEntrants(standings(20), 16, { p1: 'out' });
+    const ids = e.map((x) => x.playerId);
+    expect(e).toHaveLength(16);
+    expect(ids).not.toContain('p1'); // 1위였지만 제외
+    expect(ids).toContain('p17'); // 다음 순위가 승계
+    expect(e[0]).toEqual({ seed: 1, playerId: 'p2' });
+  });
+
+  it('확정진출: 순위 16위 밖이어도 포함되고 최하위 자동진출자를 밀어냄', () => {
+    const e = seedEntrants(standings(20), 16, { p20: 'in' });
+    const ids = e.map((x) => x.playerId);
+    expect(e).toHaveLength(16);
+    expect(ids).toContain('p20'); // 20위였지만 강제 진출
+    expect(ids).not.toContain('p16'); // 최하위 자동진출자 탈락
+    expect(e[15]).toEqual({ seed: 16, playerId: 'p20' }); // 시드는 순위순(맨 끝)
+  });
+
+  it('진출+탈락 동시 적용해도 정확히 16명', () => {
+    const e = seedEntrants(standings(30), 16, { p1: 'out', p25: 'in', p26: 'in' });
+    const ids = e.map((x) => x.playerId);
+    expect(e).toHaveLength(16);
+    expect(ids).not.toContain('p1');
+    expect(ids).toContain('p25');
+    expect(ids).toContain('p26');
+  });
+
+  it('오버라이드가 없으면 기존 동작(상위 16)과 동일', () => {
+    expect(seedEntrants(standings(20), 16, {})).toEqual(seedEntrants(standings(20)));
+  });
+
+  it('selectEntrants: 실격자는 오버라이드와 무관히 제외', () => {
+    const rows = standings(18);
+    rows[2].disqualified = true; // p3 실격
+    const chosen = selectEntrants(rows, { p3: 'in' }, 16).map((r) => r.playerId);
+    expect(chosen).not.toContain('p3');
+    expect(chosen).toHaveLength(16);
   });
 });
 

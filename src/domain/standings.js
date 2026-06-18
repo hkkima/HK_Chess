@@ -86,6 +86,7 @@ export function computeStandings(players, pairings) {
       rank: null,
       qualified: false,
       disqualified,
+      koOverride: p.koOverride ?? null, // 운영자 확정 진출/탈락 ('in'|'out'|null), 표시용
     };
   });
 

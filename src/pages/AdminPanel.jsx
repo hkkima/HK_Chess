@@ -9,6 +9,27 @@ const RESULTS = [
   { v: 'draw', label: '무' },
 ];
 
+// 운영자 결과 교정용 전체 옵션 (불참 포함). 봇 게임은 불참 옵션을 숨긴다.
+function ResultOptions({ isBotGame }) {
+  return (
+    <>
+      {RESULTS.map((r) => (
+        <option key={r.v} value={r.v}>
+          {r.label}
+        </option>
+      ))}
+      {!isBotGame && (
+        <>
+          <option value="white_forfeit">백 불참(무단)</option>
+          <option value="black_forfeit">흑 불참(무단)</option>
+          <option value="white_bye_planned">백 불참(사전)</option>
+          <option value="black_bye_planned">흑 불참(사전)</option>
+        </>
+      )}
+    </>
+  );
+}
+
 function name(players, id, botRating) {
   if (id === 'BOT') return `🤖 봇(${botRating})`;
   const p = players.find((x) => x.id === id);
@@ -33,10 +54,52 @@ export default function AdminPanel() {
     startKnockout,
     advanceKnockout,
     resetAll,
+    adjustAbsence,
+    correctResult,
+    setPlayerStatus,
+    setKoOverride,
+    backupDb,
+    restoreDb,
   } = useApp();
   const [error, setError] = useState('');
   const [ratingMsg, setRatingMsg] = useState('');
   const [ratingBusy, setRatingBusy] = useState(false);
+  const [editRoundId, setEditRoundId] = useState(null); // 결과 수정: 펼친 라운드
+  const [restoreMsg, setRestoreMsg] = useState('');
+
+  function onRestoreFile(e) {
+    setError('');
+    setRestoreMsg('');
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        if (
+          !window.confirm(
+            '백업 파일로 전체 데이터를 덮어씁니다. 현재 데이터는 사라져요. 계속할까요?',
+          )
+        )
+          return;
+        restoreDb(parsed);
+        setRestoreMsg('복원 완료 — 백업 시점 데이터로 되돌렸어요.');
+      } catch (err) {
+        setError(`복원 실패: ${err.message}`);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // 같은 파일 재선택 허용
+  }
+
+  function onResetAll() {
+    if (
+      window.confirm('정말 모든 데이터를 삭제합니까? 되돌릴 수 없어요. (백업 먼저 권장)') &&
+      window.confirm('마지막 확인 — 참가자·라운드·순위가 전부 삭제됩니다.')
+    ) {
+      run(resetAll);
+    }
+  }
 
   async function runFetchRatings() {
     setError('');
@@ -130,27 +193,72 @@ export default function AdminPanel() {
                 <th style={{ textAlign: 'left' }}>참가자</th>
                 <th>실력</th>
                 <th>레이팅</th>
-                <th className="hide-sm">결석</th>
+                <th>결석</th>
+                <th>16강</th>
+                <th>실격</th>
               </tr>
             </thead>
             <tbody>
-              {db.players.map((p) => (
-                <tr key={p.id}>
-                  <td className="name">
-                    {p.name}
-                    <span className="uname">@{p.chessUsername}</span>
-                  </td>
-                  <td>{p.skill}</td>
-                  <td>
-                    {p.rating != null ? (
-                      <b>{p.rating}</b>
-                    ) : (
-                      <span className="muted">—</span>
-                    )}
-                  </td>
-                  <td className="hide-sm">{p.absenceCount ?? 0}</td>
-                </tr>
-              ))}
+              {db.players.map((p) => {
+                const dq = p.status === 'disqualified';
+                return (
+                  <tr key={p.id} className={dq ? 'dq' : ''}>
+                    <td className="name">
+                      {p.name}
+                      {dq && <span className="badge danger"> 실격</span>}
+                      {p.koOverride === 'in' && <span className="badge"> 확정진출</span>}
+                      {p.koOverride === 'out' && <span className="badge danger"> 확정탈락</span>}
+                      <span className="uname">@{p.chessUsername}</span>
+                    </td>
+                    <td>{p.skill}</td>
+                    <td>
+                      {p.rating != null ? <b>{p.rating}</b> : <span className="muted">—</span>}
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <button
+                        className="ghost"
+                        style={{ padding: '0 8px' }}
+                        onClick={() => run(() => adjustAbsence(p.id, -1))}
+                      >
+                        −
+                      </button>
+                      <b style={{ margin: '0 4px' }}>{p.absenceCount ?? 0}</b>
+                      <button
+                        className="ghost"
+                        style={{ padding: '0 8px' }}
+                        onClick={() => run(() => adjustAbsence(p.id, +1))}
+                      >
+                        +
+                      </button>
+                    </td>
+                    <td>
+                      <select
+                        value={p.koOverride ?? 'auto'}
+                        onChange={(e) =>
+                          run(() =>
+                            setKoOverride(p.id, e.target.value === 'auto' ? null : e.target.value),
+                          )
+                        }
+                        style={{ width: 96 }}
+                      >
+                        <option value="auto">자동</option>
+                        <option value="in">확정진출</option>
+                        <option value="out">확정탈락</option>
+                      </select>
+                    </td>
+                    <td>
+                      <button
+                        className={dq ? 'ghost' : 'danger'}
+                        onClick={() =>
+                          run(() => setPlayerStatus(p.id, dq ? 'confirmed' : 'disqualified'))
+                        }
+                      >
+                        {dq ? '복귀' : '실격'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -339,10 +447,88 @@ export default function AdminPanel() {
         );
       })()}
 
+      {/* 결과 수정 (지난 라운드 포함) */}
+      {db.rounds.filter((r) => r.phase === 'swiss').length > 0 && (
+        <div className="card">
+          <div className="section-title">결과 수정 (지난 라운드 포함)</div>
+          <p className="muted" style={{ fontSize: '0.82rem', marginTop: -6 }}>
+            잘못 입력된 승패를 마감된 라운드에서도 고칠 수 있어요. 바꾸면 순위가 즉시 다시 계산돼요.
+            (불참으로 바꿔도 결석 횟수는 자동 증가하지 않으니, 결석은 위 명단의 ± 로 따로 보정하세요.)
+          </p>
+          {db.rounds
+            .filter((r) => r.phase === 'swiss')
+            .map((r) => {
+              const open = editRoundId === r.id;
+              const prs = db.pairings.filter((p) => p.roundId === r.id);
+              return (
+                <div key={r.id} style={{ marginBottom: 6 }}>
+                  <button
+                    className="ghost"
+                    onClick={() => setEditRoundId(open ? null : r.id)}
+                    style={{ width: '100%', textAlign: 'left' }}
+                  >
+                    {open ? '▾' : '▸'} R{r.index} · {r.status} ({prs.length}경기)
+                  </button>
+                  {open &&
+                    prs.map((p) => (
+                      <div key={p.id} className="row" style={{ margin: '6px 0 6px 16px' }}>
+                        <span className="grow" style={{ minWidth: 160 }}>
+                          {name(db.players, p.whitePlayerId, r.botRating)}
+                          <span className="muted"> vs </span>
+                          {name(db.players, p.blackPlayerId, r.botRating)}
+                          {p.isBotGame && <span className="badge bot"> 봇</span>}
+                        </span>
+                        <select
+                          value={p.result}
+                          onChange={(e) => run(() => correctResult(p.id, e.target.value))}
+                          style={{ width: 150 }}
+                        >
+                          <ResultOptions isBotGame={p.isBotGame} />
+                        </select>
+                      </div>
+                    ))}
+                </div>
+              );
+            })}
+        </div>
+      )}
+
+      {/* 백업 / 복원 */}
+      <div className="card">
+        <div className="section-title">백업 / 복원</div>
+        {restoreMsg && <div className="ok">{restoreMsg}</div>}
+        <p className="muted" style={{ fontSize: '0.82rem', marginTop: -6 }}>
+          코드 배포는 데이터를 건드리지 않지만, 큰 변경 전엔 백업을 받아두면 안전해요.
+        </p>
+        <div className="row">
+          <button onClick={() => run(backupDb)}>💾 백업 (JSON 내보내기)</button>
+          <label
+            style={{
+              cursor: 'pointer',
+              fontWeight: 700,
+              fontSize: '0.95rem',
+              border: '1px solid var(--line)',
+              background: 'transparent',
+              color: 'var(--ink)',
+              padding: '10px 16px',
+              borderRadius: 10,
+            }}
+          >
+            ♻️ 복원 (JSON 가져오기)
+            <input
+              type="file"
+              accept="application/json,.json"
+              onChange={onRestoreFile}
+              style={{ display: 'none' }}
+            />
+          </label>
+        </div>
+      </div>
+
       {/* 위험 구역 */}
       <div className="card">
         <div className="section-title">위험 구역</div>
-        <button className="danger" onClick={() => run(resetAll)}>
+        <button className="danger" onClick={onResetAll}>
           전체 초기화 (모든 데이터 삭제)
         </button>
       </div>

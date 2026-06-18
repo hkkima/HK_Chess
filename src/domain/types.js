@@ -21,6 +21,7 @@
  * @property {PlayerStatus} status
  * @property {number} absenceCount
  * @property {number} registeredAt
+ * @property {'in'|'out'} [koOverride]  운영자 16강 확정 진출('in')/탈락('out'). 없으면 자동 순위 기준.
  */
 
 /**
@@ -64,6 +65,7 @@
  * @property {number|null} rank
  * @property {boolean} qualified
  * @property {boolean} disqualified
+ * @property {'in'|'out'|null} [koOverride]
  */
 
 export {};

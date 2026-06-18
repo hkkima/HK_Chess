@@ -29,12 +29,31 @@ export function startingStageFor(n) {
   return '16강';
 }
 
-/** 스위스 최종 순위 → 상위 시드 [{seed, playerId}] */
-export function seedEntrants(standingRows, count = ADVANCE_COUNT) {
-  return standingRows
-    .filter((r) => r.qualified && !r.disqualified)
-    .slice(0, count)
-    .map((r, i) => ({ seed: i + 1, playerId: r.playerId }));
+/**
+ * 진출자 선택 (순수). 운영자 오버라이드를 반영하되 항상 count(16) 이하 유지.
+ *  - overrides: { [playerId]: 'in' | 'out' }
+ *  - 확정탈락('out'): 순위와 무관히 제외 → 다음 순위가 슬롯 승계
+ *  - 확정진출('in'): 순위와 무관히 포함 → 최하위 자동진출자를 밀어냄
+ * @returns {import('./types.js').StandingRow[]}  시드 순서대로 정렬된 진출 행
+ */
+export function selectEntrants(standingRows, overrides = {}, count = ADVANCE_COUNT) {
+  const eligible = standingRows.filter(
+    (r) => !r.disqualified && overrides[r.playerId] !== 'out',
+  );
+  const forcedIn = eligible.filter((r) => overrides[r.playerId] === 'in');
+  const rest = eligible.filter((r) => overrides[r.playerId] !== 'in');
+  const remaining = Math.max(0, count - forcedIn.length);
+  return [...forcedIn, ...rest.slice(0, remaining)]
+    .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity)) // 시드 안정화
+    .slice(0, count);
+}
+
+/** 스위스 최종 순위 → 상위 시드 [{seed, playerId}] (오버라이드 반영) */
+export function seedEntrants(standingRows, count = ADVANCE_COUNT, overrides = {}) {
+  return selectEntrants(standingRows, overrides, count).map((r, i) => ({
+    seed: i + 1,
+    playerId: r.playerId,
+  }));
 }
 
 function gameColors(highId, lowId, gameNo) {

@@ -23,6 +23,8 @@ export default function StandingsTable({ rows, highlightPlayerId }) {
           {r.name}
           {r.playerId === highlightPlayerId && <span className="badge mine"> 나</span>}
           {r.disqualified && <span className="badge danger"> 실격</span>}
+          {r.koOverride === 'in' && <span className="badge gold"> 확정진출</span>}
+          {r.koOverride === 'out' && <span className="badge danger"> 확정탈락</span>}
           <span className="uname">@{r.chessUsername}</span>
         </td>
         <td>

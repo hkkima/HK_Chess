@@ -19,11 +19,24 @@ import {
 } from '../domain/knockout.js';
 import { verifyGameUrl, fetchPlayerRating, playerExists } from '../services/chesscom.js';
 import { signInWithGoogle, adminEmails } from '../data/firebase.js';
-import { dayOfRound, SWISS_ROUNDS, SWISS_TIME_FORMAT } from '../domain/rules.js';
+import { dayOfRound, SWISS_ROUNDS, SWISS_TIME_FORMAT, ADVANCE_COUNT } from '../domain/rules.js';
 
 const AppContext = createContext(null);
 
 const SESSION_KEY = 'chess_tournament_session_v1';
+
+// 현재 db 상태로 순위를 재계산해 standings 객체를 만든다(라운드 마감과 무관히 재사용).
+function freshStandings(d) {
+  const rows = computeStandings(
+    d.players.filter((p) => p.status !== 'disqualified'),
+    d.pairings,
+  );
+  return {
+    asOfRoundIndex: d.tournament.currentRoundIndex,
+    rows,
+    updatedAt: Date.now(),
+  };
+}
 
 function loadSession() {
   try {
@@ -288,15 +301,7 @@ export function AppProvider({ children }) {
       d.rounds = d.rounds.map((r) =>
         r.id === d.tournament.currentRoundId ? { ...r, status: 'closed' } : r,
       );
-      const rows = computeStandings(
-        d.players.filter((p) => p.status !== 'disqualified'),
-        d.pairings,
-      );
-      d.standings = {
-        asOfRoundIndex: d.tournament.currentRoundIndex,
-        rows,
-        updatedAt: Date.now(),
-      };
+      d.standings = freshStandings(d);
       if (d.tournament.currentRoundIndex >= SWISS_ROUNDS) {
         d.tournament.phase = 'finished';
       }
@@ -416,7 +421,11 @@ export function AppProvider({ children }) {
     if (!db.standings.rows || db.standings.rows.length === 0)
       throw new Error('스위스 순위가 없어요. 먼저 라운드를 마감해 주세요.');
     if (db.tournament.knockoutStage) throw new Error('이미 녹아웃이 진행 중이에요.');
-    const entrants = seedEntrants(db.standings.rows);
+    // 운영자 확정 진출/탈락 오버라이드를 시드 선택에 반영 (항상 ≤16명).
+    const overrides = Object.fromEntries(
+      db.players.filter((p) => p.koOverride).map((p) => [p.id, p.koOverride]),
+    );
+    const entrants = seedEntrants(db.standings.rows, ADVANCE_COUNT, overrides);
     if (entrants.length < 2) throw new Error('진출자가 2명 이상이어야 해요.');
     const stage = startingStageFor(entrants.length);
     const matches = createInitialMatches(stage, entrants);
@@ -587,8 +596,80 @@ export function AppProvider({ children }) {
           ? { ...p, absenceCount: Math.max(0, (p.absenceCount ?? 0) + delta) }
           : p,
       );
+      d.standings = freshStandings(d); // 결석↔실격↔순위 일관성
       return d;
     });
+  }
+
+  // ---- 운영자: 데이터 보정 (지난 라운드 포함) ----
+  // 순위만 다시 계산 (결과/명단을 직접 안 바꿀 때 쓰는 보조 버튼).
+  function recomputeStandings() {
+    update((d) => {
+      d.standings = freshStandings(d);
+      return d;
+    });
+  }
+
+  // 임의 대진의 결과를 운영자가 교정 (마감된 라운드 포함) + 순위 즉시 반영.
+  // 결과 문자열만 바꾸며, 결석 카운트는 건드리지 않음(별도 adjustAbsence 로 보정).
+  function correctResult(pairingId, result) {
+    update((d) => {
+      d.pairings = d.pairings.map((p) =>
+        p.id === pairingId ? { ...p, result, resultSource: 'admin' } : p,
+      );
+      d.standings = freshStandings(d);
+      return d;
+    });
+  }
+
+  // 실격/복귀 토글. status 변경 후 순위 재계산(실격자는 하단 분리 + 진출 제외).
+  function setPlayerStatus(playerId, status) {
+    update((d) => {
+      d.players = d.players.map((p) => (p.id === playerId ? { ...p, status } : p));
+      d.standings = freshStandings(d);
+      return d;
+    });
+  }
+
+  // 16강 확정 진출('in')/탈락('out') 오버라이드. null 이면 해제(자동 순위 기준).
+  function setKoOverride(playerId, value) {
+    update((d) => {
+      d.players = d.players.map((p) => {
+        if (p.id !== playerId) return p;
+        const next = { ...p };
+        if (value === 'in' || value === 'out') next.koOverride = value;
+        else delete next.koOverride;
+        return next;
+      });
+      d.standings = freshStandings(d); // 배지 표시용 koOverride 반영
+      return d;
+    });
+  }
+
+  // ---- 백업/복원 (라이브 데이터 안전망) ----
+  // 현재 전체 db 를 JSON 파일로 내려받음 (저장소 변경 없음, 순수 읽기).
+  function backupDb() {
+    const stamp = new Date()
+      .toISOString()
+      .replace(/[:T]/g, '-')
+      .replace(/\..+/, '')
+      .slice(0, 16);
+    const blob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chess-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  // 백업 JSON 으로 전체 복원. update 의 diff sync 가 저장소를 백업 시점에 맞춰 set/delete.
+  function restoreDb(parsed) {
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.players))
+      throw new Error('백업 파일 형식이 올바르지 않아요. (players 배열이 필요)');
+    update(() => ({ ...defaultDb(), ...parsed }));
   }
 
   function resetAll() {
@@ -625,6 +706,12 @@ export function AppProvider({ children }) {
     resolveReview,
     markAbsence,
     adjustAbsence,
+    recomputeStandings,
+    correctResult,
+    setPlayerStatus,
+    setKoOverride,
+    backupDb,
+    restoreDb,
     startKnockout,
     advanceKnockout,
     setMatchGameResult,

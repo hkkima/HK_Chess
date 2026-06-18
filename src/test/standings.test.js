@@ -107,4 +107,23 @@ describe('computeStandings', () => {
     expect(dq.rank).toBeNull();
     expect(ok.rank).toBe(1);
   });
+
+  it('수동 실격(status=disqualified)도 하단 분리 + 진출 제외', () => {
+    const players = [
+      player('ok', { absenceCount: 0 }),
+      player('dq', { status: 'disqualified', absenceCount: 0 }),
+    ];
+    const rows = computeStandings(players, [pairing('ok', 'BOT', 'white_win', true)]);
+    const dq = rows.find((r) => r.playerId === 'dq');
+    expect(dq.disqualified).toBe(true);
+    expect(dq.rank).toBeNull();
+    expect(dq.qualified).toBe(false);
+  });
+
+  it('koOverride 가 순위 행에 통과된다 (표시용)', () => {
+    const players = [player('a', { koOverride: 'in' }), player('b', { koOverride: 'out' })];
+    const rows = computeStandings(players, []);
+    expect(rows.find((r) => r.playerId === 'a').koOverride).toBe('in');
+    expect(rows.find((r) => r.playerId === 'b').koOverride).toBe('out');
+  });
 });
