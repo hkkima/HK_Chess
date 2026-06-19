@@ -453,6 +453,27 @@ export function AppProvider({ children }) {
     });
   }
 
+  // 현재 첫 스테이지(예: 16강) 대진을 "지금 시딩 기준"으로 다시 짠다.
+  // 대진 방식(크로스오버)이나 순위/오버라이드가 바뀐 뒤 재설정용.
+  // 이미 다음 라운드로 진출했으면 불가(결과 보존). 이 스테이지의 기존 결과는 초기화된다.
+  function reseedKnockout() {
+    const stage = db.tournament.knockoutStage;
+    if (!stage) throw new Error('녹아웃이 진행 중이 아니에요.');
+    const koRounds = db.rounds.filter((r) => r.phase === 'knockout');
+    if (koRounds.length > 1)
+      throw new Error('이미 다음 라운드로 진출해 재설정할 수 없어요. (첫 스테이지에서만 가능)');
+    const overrides = Object.fromEntries(
+      db.players.filter((p) => p.koOverride).map((p) => [p.id, p.koOverride]),
+    );
+    const entrants = seedEntrants(db.standings.rows, ADVANCE_COUNT, overrides);
+    if (entrants.length < 2) throw new Error('진출자가 2명 이상이어야 해요.');
+    const matches = createInitialMatches(stage, entrants);
+    update((d) => {
+      d.matches = matches; // 같은 id(KO_stage_slot)로 덮어쓰기 — 기존 결과 폐기
+      return d;
+    });
+  }
+
   // 매치 재평가 (draft 변경). 결승이 끝나면 우승 확정.
   function refreshMatch(d, match) {
     const r = evaluateMatch(match);
@@ -715,6 +736,7 @@ export function AppProvider({ children }) {
     backupDb,
     restoreDb,
     startKnockout,
+    reseedKnockout,
     advanceKnockout,
     setMatchGameResult,
     setMatchArmageddon,

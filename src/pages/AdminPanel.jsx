@@ -53,6 +53,7 @@ export default function AdminPanel() {
     markAbsence,
     resolveReview,
     startKnockout,
+    reseedKnockout,
     advanceKnockout,
     resetAll,
     adjustAbsence,
@@ -344,9 +345,27 @@ export default function AdminPanel() {
               <p className="muted" style={{ fontSize: '0.82rem', marginTop: -4 }}>
                 매치 결과 입력은 <Link to="/bracket">브래킷 페이지</Link>에서 해요.
               </p>
-              {t.phase !== 'finished' && t.knockoutStage !== '결승' && (
-                <button onClick={() => run(advanceKnockout)}>▶ 다음 라운드 진출</button>
-              )}
+              <div className="row">
+                {t.phase !== 'finished' && t.knockoutStage !== '결승' && (
+                  <button onClick={() => run(advanceKnockout)}>▶ 다음 라운드 진출</button>
+                )}
+                {/* 첫 스테이지에서만: 현재 시딩 기준으로 대진 다시 짜기 */}
+                {db.rounds.filter((r) => r.phase === 'knockout').length === 1 && (
+                  <button
+                    className="ghost"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `현재 ${t.knockoutStage} 대진을 지금 시딩 기준(크로스오버)으로 다시 짭니다.\n이 스테이지에 이미 입력된 매치 결과는 초기화돼요. 계속할까요?`,
+                        )
+                      )
+                        run(reseedKnockout);
+                    }}
+                  >
+                    🔄 {t.knockoutStage} 대진 다시 짜기 (현재 시딩)
+                  </button>
+                )}
+              </div>
               {t.phase === 'finished' && (
                 <div className="notice">🎉 결승까지 종료! 우승자가 확정됐어요.</div>
               )}
