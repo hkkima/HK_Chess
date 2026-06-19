@@ -91,12 +91,16 @@ export function newMatch(stage, slot, high, low) {
   };
 }
 
-/** 첫 스테이지 매치: 폴드 페어링(상위 i vs 하위 n-1-i) */
+/**
+ * 첫 스테이지 매치: 크로스오버 페어링(상위절반 i vs 하위절반 i+half).
+ * 16강이면 1v9·2v10·…·8v16 — 모든 매치 시드차가 8로 균일해 1라운드 실력 편차/블로아웃을 완화.
+ * (폴드 1v16…은 상위 매치 편차가 극단적이라 변경. 다음 스테이지는 createNextStageMatches 가 시드순 재폴드로 상위 시드 보호.)
+ */
 export function createInitialMatches(stage, entrants) {
-  const n = entrants.length;
+  const half = Math.floor(entrants.length / 2);
   const matches = [];
-  for (let i = 0; i < Math.floor(n / 2); i += 1) {
-    matches.push(newMatch(stage, i, entrants[i], entrants[n - 1 - i]));
+  for (let i = 0; i < half; i += 1) {
+    matches.push(newMatch(stage, i, entrants[i], entrants[i + half]));
   }
   return matches;
 }
@@ -151,19 +155,20 @@ export function isStageComplete(matches) {
   return matches.length > 0 && matches.every((m) => m.status === 'decided');
 }
 
-/** 다음 스테이지 매치: 이전 매치 승자들을 인접 페어링(시드 좋은 쪽이 high) */
+/**
+ * 다음 스테이지 매치: 승자들을 시드순 정렬 후 폴드 페어링(최상위 vs 최하위).
+ * 인접 페어링이 아니라 폴드라야 상위 시드가 보호됨
+ *  → 8강 1v8·2v7·3v6·4v5 → 4강 1v4·2v3 → 결승 1v2 (시드1·2는 결승에서만 만남).
+ */
 export function createNextStageMatches(stage, prevMatches, playerSeed) {
-  const sorted = [...prevMatches].sort((a, b) => a.slot - b.slot);
-  const winners = sorted.map((m) => ({
-    playerId: m.winnerId,
-    seed: playerSeed.get(m.winnerId) ?? 99,
-  }));
+  const winners = prevMatches
+    .map((m) => ({ playerId: m.winnerId, seed: playerSeed.get(m.winnerId) ?? 99 }))
+    .sort((a, b) => a.seed - b.seed);
+  const n = winners.length;
   const matches = [];
-  for (let i = 0; i < winners.length; i += 2) {
-    const a = winners[i];
-    const b = winners[i + 1];
-    const [high, low] = a.seed <= b.seed ? [a, b] : [b, a];
-    matches.push(newMatch(stage, i / 2, high, low));
+  for (let i = 0; i < Math.floor(n / 2); i += 1) {
+    const [high, low] = [winners[i], winners[n - 1 - i]];
+    matches.push(newMatch(stage, i, high, low));
   }
   return matches;
 }

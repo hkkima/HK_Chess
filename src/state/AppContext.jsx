@@ -58,21 +58,21 @@ export function AppProvider({ children }) {
   const [user, setUser] = useState(() => loadSession());
   const [loading, setLoading] = useState(storeRef.current.mode !== 'local');
 
-  // 마운트 시 저장소에서 전체 로드 (파베면 원격, 로컬이면 캐시 재확인)
-  useEffect(() => {
-    let alive = true;
-    storeRef.current
-      .loadAll()
-      .then((loaded) => {
-        if (alive) setDb(loaded);
-      })
+  // 저장소 로드. full=true 면 전체(운영자), false 면 현재 라운드/스테이지 범위만(공개·참가자).
+  // 읽기량을 줄이려고 비관리자는 light 로 로드한다(파베 한정. 로컬은 항상 전체).
+  function reload(full) {
+    setLoading(true);
+    return storeRef.current
+      .loadAll({ full })
+      .then((loaded) => setDb(loaded))
       .catch((e) => console.error('저장소 로드 실패:', e))
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
+      .finally(() => setLoading(false));
+  }
+
+  // 마운트 시 1회 로드. 세션이 운영자면 full, 아니면 light.
+  useEffect(() => {
+    reload(loadSession()?.type === 'admin');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -170,6 +170,7 @@ export function AppProvider({ children }) {
   function loginAdmin(password) {
     if (password !== ADMIN_PASSWORD) throw new Error('운영자 비밀번호가 올바르지 않아요.');
     setUser({ type: 'admin', name: '운영자' });
+    reload(true); // light 로 로드됐던 db 를 운영자용 전체로 교체
   }
 
   // 운영자 구글 로그인 (firebase 모드). VITE_ADMIN_EMAILS 화이트리스트가 있으면 그 계정만.
@@ -181,6 +182,7 @@ export function AppProvider({ children }) {
       throw new Error(`이 계정(${u.email})은 운영자 목록에 없어요.`);
     }
     setUser({ type: 'admin', name: u.displayName || u.email || '운영자', email: u.email });
+    reload(true); // light 로 로드됐던 db 를 운영자용 전체로 교체
   }
 
   function logout() {

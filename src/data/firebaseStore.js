@@ -13,6 +13,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   writeBatch,
 } from 'firebase/firestore';
 import { getFirebase, ensureAuth } from './firebase.js';
@@ -40,7 +42,9 @@ export function createFirebaseStore() {
   return {
     mode: 'firebase',
 
-    async loadAll() {
+    // full=true(운영자): 전체 컬렉션 로드. full=false(공개/참가자): 화면에 필요한
+    // 현재 라운드/스테이지 범위만 로드해 읽기량을 상수로 낮춘다(쓰기 모델은 동일).
+    async loadAll({ full = true } = {}) {
       await ensureAuth();
       const { db } = getFirebase();
       const base = defaultDb();
@@ -50,10 +54,35 @@ export function createFirebaseStore() {
       const sSnap = await getDoc(doc(db, 'meta', 'standings'));
       if (sSnap.exists()) base.standings = sSnap.data();
 
-      for (const name of COLLECTIONS) {
-        const snap = await getDocs(collection(db, name));
-        base[name] = snap.docs.map((d) => d.data());
+      // players 는 이름 표시에 항상 필요(23명 상수).
+      const pSnap = await getDocs(collection(db, 'players'));
+      base.players = pSnap.docs.map((d) => d.data());
+
+      if (full) {
+        for (const name of ['rounds', 'pairings', 'matches', 'reviewQueue']) {
+          const snap = await getDocs(collection(db, name));
+          base[name] = snap.docs.map((d) => d.data());
+        }
+        return base;
       }
+
+      // light: 현재 라운드 1개 + 그 대진만, 녹아웃이면 현재 스테이지 매치만.
+      const t = base.tournament;
+      if (t.currentRoundId) {
+        const rSnap = await getDoc(doc(db, 'rounds', t.currentRoundId));
+        base.rounds = rSnap.exists() ? [rSnap.data()] : [];
+        const pq = await getDocs(
+          query(collection(db, 'pairings'), where('roundId', '==', t.currentRoundId)),
+        );
+        base.pairings = pq.docs.map((d) => d.data());
+      }
+      if (t.knockoutStage) {
+        const mq = await getDocs(
+          query(collection(db, 'matches'), where('stage', '==', t.knockoutStage)),
+        );
+        base.matches = mq.docs.map((d) => d.data());
+      }
+      base.reviewQueue = []; // 비공개 — 운영자 full 로드에서만 채움
       return base;
     },
 

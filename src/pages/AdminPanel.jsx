@@ -40,6 +40,7 @@ export default function AdminPanel() {
   const {
     db,
     user,
+    loading,
     currentRound,
     currentPairings,
     loadDemoPlayers,
@@ -123,6 +124,18 @@ export default function AdminPanel() {
           <p className="muted">
             운영자 전용이에요. <Link to="/login">운영자로 로그인</Link>해 주세요 👑
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // 운영자 로그인 직후 전체 데이터를 다시 불러오는 중에는 부분 데이터로 조작하지 못하게 막는다.
+  if (loading) {
+    return (
+      <div>
+        <h1 className="page-title">운영자 패널</h1>
+        <div className="card">
+          <p className="muted">전체 데이터를 불러오는 중이에요… 잠시만요 🐾</p>
         </div>
       </div>
     );
